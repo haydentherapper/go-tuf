@@ -147,6 +147,20 @@ func (c *Client) Init(rootKeys []*data.PublicKey, threshold int) error {
 	return c.local.SetMeta("root.json", rootJSON)
 }
 
+// InitWithRoot initializes a local repository from root metadata.
+//
+// The root's keys are extracted from the root and saved in local storage.
+// Root expiration is not checked.
+// It is expected that rootJSON was securely distributed with the software
+// being updated.
+func (c *Client) InitWithRootMeta(rootJSON []byte) error {
+	err := c.loadAndVerifyRootMeta(rootJSON, true /*ignoreExpiredCheck*/)
+	if err != nil {
+		return err
+	}
+	return c.local.SetMeta("root.json", rootJSON)
+}
+
 // Update downloads and verifies remote metadata and returns updated targets.
 // It always performs root update (5.2 and 5.3) section of the v1.0.19 spec.
 //
@@ -430,6 +444,12 @@ func (c *Client) loadAndVerifyLocalRootMeta(ignoreExpiredCheck bool) error {
 	if !ok {
 		return ErrNoRootKeys
 	}
+	return c.loadAndVerifyRootMeta(rootJSON, ignoreExpiredCheck)
+}
+
+// loadAndVerifyRootMeta decodes and verifies root metadata and loads the top-level keys.
+// This method first clears the DB for top-level keys and then loads the new keys.
+func (c *Client) loadAndVerifyRootMeta(rootJSON []byte, ignoreExpiredCheck bool) error {
 	// unmarshal root.json without verifying as we need the root
 	// keys first
 	s := &data.Signed{}
