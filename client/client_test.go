@@ -174,13 +174,6 @@ func (s *ClientSuite) addRemoteTarget(c *C, name string) {
 	s.syncRemote(c)
 }
 
-func (s *ClientSuite) rootKeys(c *C) []*data.PublicKey {
-	rootKeys, err := s.repo.RootKeys()
-	c.Assert(err, IsNil)
-	c.Assert(rootKeys, HasLen, 1)
-	return rootKeys
-}
-
 func (s *ClientSuite) newClient(c *C) *Client {
 	s.local = MemoryLocalStore()
 	client := NewClient(s.local, s.remote)
@@ -988,6 +981,7 @@ func (s *ClientSuite) TestUpdateHTTP(c *C) {
 		c.Assert(err, IsNil)
 		client := NewClient(MemoryLocalStore(), remote)
 		ioReader, _, err := remote.GetMeta("root.json")
+		c.Assert(err, IsNil)
 		bytes, err := io.ReadAll(ioReader)
 		c.Assert(err, IsNil)
 		c.Assert(client.Init(bytes), IsNil)

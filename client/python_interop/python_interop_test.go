@@ -58,6 +58,7 @@ func (InteropSuite) TestGoClientPythonGenerated(c *C) {
 		// initiate a client with the root keys
 		client := client.NewClient(client.MemoryLocalStore(), remote)
 		rootJSON, err := ioutil.ReadFile(filepath.Join(testDataDir, dir, "repository", "metadata", "root.json"))
+		c.Assert(err, IsNil)
 		c.Assert(client.Init(rootJSON), IsNil)
 
 		// check update returns the correct updated targets
