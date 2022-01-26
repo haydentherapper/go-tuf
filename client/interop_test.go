@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -151,8 +152,10 @@ func (t *testCase) runStep(c *C, stepName string) {
 
 	client := NewClient(t.local, remote)
 	// initiate a client with the root keys
-	keys := getKeys(c, remote)
-	c.Assert(client.Init(keys, 1), IsNil)
+	ioReader, _, err := remote.GetMeta("root.json")
+	rootJsonBytes, err := io.ReadAll(ioReader)
+	c.Assert(err, IsNil)
+	c.Assert(client.Init(rootJsonBytes), IsNil)
 
 	// check update returns the correct updated targets
 	files, err := client.Update()

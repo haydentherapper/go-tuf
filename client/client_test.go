@@ -184,7 +184,9 @@ func (s *ClientSuite) rootKeys(c *C) []*data.PublicKey {
 func (s *ClientSuite) newClient(c *C) *Client {
 	s.local = MemoryLocalStore()
 	client := NewClient(s.local, s.remote)
-	c.Assert(client.Init(s.rootKeys(c), 1), IsNil)
+	bytes, err := io.ReadAll(s.remote.meta["root.json"])
+	c.Assert(err, IsNil)
+	c.Assert(client.Init(bytes), IsNil)
 	return client
 }
 
@@ -243,44 +245,7 @@ func (s *ClientSuite) assertErrExpired(c *C, err error, file string) {
 	c.Assert(expiredErr.Expired.Unix(), Equals, s.expiredTime.Round(time.Second).Unix())
 }
 
-func (s *ClientSuite) TestInitRootTooLarge(c *C) {
-	client := NewClient(MemoryLocalStore(), s.remote)
-	s.remote.meta["root.json"] = newFakeFile(make([]byte, defaultRootDownloadLimit+1))
-	c.Assert(client.Init(s.rootKeys(c), 0), Equals, ErrMetaTooLarge{"root.json", defaultRootDownloadLimit + 1, defaultRootDownloadLimit})
-}
-
-func (s *ClientSuite) TestInitRootExpired(c *C) {
-	s.genKeyExpired(c, "targets")
-	c.Assert(s.repo.Snapshot(), IsNil)
-	c.Assert(s.repo.Timestamp(), IsNil)
-	c.Assert(s.repo.Commit(), IsNil)
-	s.syncRemote(c)
-	client := NewClient(MemoryLocalStore(), s.remote)
-	s.withMetaExpired(func() {
-		s.assertErrExpired(c, client.Init(s.rootKeys(c), 1), "root.json")
-	})
-}
-
-func (s *ClientSuite) TestInit(c *C) {
-	client := NewClient(MemoryLocalStore(), s.remote)
-
-	// check Init() returns keys.ErrInvalidThreshold with an invalid threshold
-	c.Assert(client.Init(s.rootKeys(c), 0), Equals, verify.ErrInvalidThreshold)
-
-	// check Init() returns signed.ErrRoleThreshold when not enough keys
-	c.Assert(client.Init(s.rootKeys(c), 2), Equals, ErrInsufficientKeys)
-
-	// check Update() returns ErrNoRootKeys when uninitialized
-	_, err := client.Update()
-	c.Assert(err, Equals, ErrNoRootKeys)
-
-	// check Update() does not return ErrNoRootKeys after initialization
-	c.Assert(client.Init(s.rootKeys(c), 1), IsNil)
-	_, err = client.Update()
-	c.Assert(err, IsNil)
-}
-
-func (s *ClientSuite) TestInitWithRootAllowsExpired(c *C) {
+func (s *ClientSuite) TestInitAllowsExpired(c *C) {
 	s.genKeyExpired(c, "targets")
 	c.Assert(s.repo.Snapshot(), IsNil)
 	c.Assert(s.repo.Timestamp(), IsNil)
@@ -290,11 +255,11 @@ func (s *ClientSuite) TestInitWithRootAllowsExpired(c *C) {
 	bytes, err := io.ReadAll(s.remote.meta["root.json"])
 	c.Assert(err, IsNil)
 	s.withMetaExpired(func() {
-		c.Assert(client.InitWithRootMeta(bytes), IsNil)
+		c.Assert(client.Init(bytes), IsNil)
 	})
 }
 
-func (s *ClientSuite) TestInitWithRoot(c *C) {
+func (s *ClientSuite) TestInit(c *C) {
 	client := NewClient(MemoryLocalStore(), s.remote)
 	bytes, err := io.ReadAll(s.remote.meta["root.json"])
 	c.Assert(err, IsNil)
@@ -307,8 +272,7 @@ func (s *ClientSuite) TestInitWithRoot(c *C) {
 	_, err = client.Update()
 	c.Assert(err, Equals, ErrNoRootKeys)
 
-	// check InitWithRootMeta() returns ErrInvalid when the root's signature is
-	// invalid
+	// check Init() returns ErrInvalid when the root's signature is invalid
 	// modify root and marshal without regenerating signatures
 	root.Version = root.Version + 1
 	rootBytes, err := json.Marshal(root)
@@ -316,10 +280,10 @@ func (s *ClientSuite) TestInitWithRoot(c *C) {
 	dataSigned.Signed = rootBytes
 	dataBytes, err := json.Marshal(dataSigned)
 	c.Assert(err, IsNil)
-	c.Assert(client.InitWithRootMeta(dataBytes), Equals, verify.ErrInvalid)
+	c.Assert(client.Init(dataBytes), Equals, verify.ErrInvalid)
 
 	// check Update() does not return ErrNoRootKeys after initialization
-	c.Assert(client.InitWithRootMeta(bytes), IsNil)
+	c.Assert(client.Init(bytes), IsNil)
 	_, err = client.Update()
 	c.Assert(err, IsNil)
 }
@@ -1017,16 +981,16 @@ func (s *ClientSuite) TestUpdateHTTP(c *C) {
 		dir := fmt.Sprintf("consistent-snapshot-%t", consistentSnapshot)
 
 		// generate repository
-		repo := generateRepoFS(c, filepath.Join(tmp, dir), targetFiles, consistentSnapshot)
+		_ = generateRepoFS(c, filepath.Join(tmp, dir), targetFiles, consistentSnapshot)
 
 		// initialize a client
 		remote, err := HTTPRemoteStore(fmt.Sprintf("http://%s/%s/repository", addr, dir), nil, nil)
 		c.Assert(err, IsNil)
 		client := NewClient(MemoryLocalStore(), remote)
-		rootKeys, err := repo.RootKeys()
+		ioReader, _, err := remote.GetMeta("root.json")
+		bytes, err := io.ReadAll(ioReader)
 		c.Assert(err, IsNil)
-		c.Assert(rootKeys, HasLen, 1)
-		c.Assert(client.Init(rootKeys, 1), IsNil)
+		c.Assert(client.Init(bytes), IsNil)
 
 		// check update is ok
 		targets, err := client.Update()
